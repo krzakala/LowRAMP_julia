@@ -7,9 +7,37 @@ Description: AMP for Low Rank Estimation LowRAMP for UV' and XX' decomposition
 
 module LowRAMP
 
-export LowRAMP_UV,demo_LowRAMP_UV,demo_submatrix #demos
+export LowRAMP_UV,demo_LowRAMP_UV,demo_submatrix,demo_completion #demos
 export LowRAMP_XX,demo_LowRAMP_XX #main functions
 export f_Rank1Binary,f_gauss,f_clust #priors
+
+function  demo_completion(m=5000,n=5000,RANK=3,Delta=1e-4)
+
+   @printf("Creating a %dx%d matrix of rank %d ...\n",m,n,RANK);
+
+    U = randn(m,RANK);
+    V = randn(n,RANK);
+
+    @printf(" ...and adding a Gaussian noise with sigma  %f \n",sqrt(Delta));
+
+    #Adding noise!
+    Y=U*V'/sqrt(n)+sqrt(Delta)*randn(m,n);
+
+    #Computing the score and the inverse Fischer information
+    S=Y/Delta;Iinv=Delta;
+
+    @printf("Let us now hide 90 percent of all entries \n");
+    fraction=0.1;
+    Support=int(rand(size(Y)).<fraction);
+    
+    #Calling the code
+    @printf("Running AMP \n");
+    damp=0.5;init_sol=1;
+    tic
+    u_ample,v_ample = LowRAMP_UV(S.*Support,Iinv/fraction,RANK,f_gauss,f_gauss,damp,1e-6,100,[],[],init_sol);
+    toc;
+    @printf("Done! The Squared Reconstruction error on the matrix reads %e \n",mean((u_ample*v_ample'/sqrt(n)-Y).^2));
+end
 
 function  demo_submatrix(m=5000,n=5000,m_m=250,n_n=250,Delta=1e-3)
     RANK=1;
