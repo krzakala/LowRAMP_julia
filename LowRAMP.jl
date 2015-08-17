@@ -7,8 +7,35 @@ Description: AMP for Low Rank Estimation LowRAMP for UV' and XX' decomposition
 
 module LowRAMP
 
-export LowRAMP_UV,demo_LowRAMP_UV,LowRAMP_XX,demo_LowRAMP_XX
+export LowRAMP_UV,demo_LowRAMP_UV,demo_submatrix #demos
+export LowRAMP_XX,demo_LowRAMP_XX #main functions
+export f_Rank1Binary,f_gauss,f_clust #priors
 
+function  demo_submatrix(m=5000,n=5000,m_m=250,n_n=250,Delta=1e-3)
+    RANK=1;
+
+    @printf("Creating a %dx%d signal with a %dx%d submatrix hidden \n",m,n,m_m,n_n);
+    Y=[zeros(m-m_m,n); ones(m_m,n_n) zeros(m_m,n-n_n)];
+    
+    @printf("adding a noise with std %f \n",sqrt(n)*sqrt(Delta));
+    W=Y/sqrt(n)+sqrt(Delta)*randn(m,n);
+
+    #Computing the score and the inverse Fischer information
+    S=W/Delta;Iinv=Delta;
+
+    #Calling the code
+    @printf("Running AMP \n");
+    damp=0.5;    init_sol=4;
+    prior_u(x,y)=f_Rank1Binary(x,y,m_m/m);
+    prior_v(x,y)=f_Rank1Binary(x,y,m_m/m);
+    tic();
+    u_ample,v_ample = LowRAMP_UV(S,Iinv,RANK,prior_u,prior_v,damp,1e-6,100,[],[],init_sol);
+    toc()
+    #rounding to nearest integer
+    u_hat=round(u_ample);
+    v_hat=round(v_ample);
+    @printf("Done! The Squared Reconstruction error on the matrix reads %e \n",mean((u_hat*v_hat'/sqrt(n)-W).^2));
+end
 
 function  demo_LowRAMP_XX(n=2500,RANK=3,p=0.5,Deltaeff=0.05)
     @printf("Creating a problem of rank %d with a %dx%d matrix \n", RANK,n,n);
@@ -36,11 +63,11 @@ function  demo_LowRAMP_XX(n=2500,RANK=3,p=0.5,Deltaeff=0.05)
 
     #Calling the code
     @printf("Running AMP \n");
-    damp=-0.5;    init_sol=1;
+    damp=-1;    init_sol=1;
     tic()  
     x_ample = LowRAMP_XX(S,Iinv,RANK,f_clust,damp,1e-6,100,X,init_sol);
     toc()
-    @printf("Done! The Squared Reconstruction error on the matrix reads %e \n",mean((x_ample*x_ample'-X*X').^2));
+    @printf("Done! The Squared Reconstruction error on the matrix reads %e \n",mean((x_ample*x_ample'-X*X').^2)/sqrt(n));
 end
 
 function  demo_LowRAMP_UV(m=250,n=1000,RANK=3,Delta=1e-2)
@@ -63,7 +90,7 @@ function  demo_LowRAMP_UV(m=250,n=1000,RANK=3,Delta=1e-2)
     tic()
     u_ample,v_ample = LowRAMP_UV(S,Iinv,RANK,f_gauss,f_clust,damp,1e-6,100,U,V,init_sol);
     toc()
-    @printf("Done! The Squared Reconstruction error on the matrix reads %e \n",mean2((u_ample*v_ample'/sqrt(n)-Y).^2));
+    @printf("Done! The Squared Reconstruction error on the matrix reads %e \n",mean((u_ample*v_ample'/sqrt(n)-Y).^2));
 
 end
 
@@ -343,16 +370,16 @@ end
 
 #= Rank 1 1/0 prior, rho is the fraction of 1 =#
 function f_Rank1Binary(A,B,rho=0.5)
-   Weight=-0.5*A+B;
-   pos=find(Weight>0);
-   neg=setdiff([1:size(B,1)],pos);
-   MEAN=zeros(size(B));
-   MEAN(neg)=rho*exp(-0.5*A+B(neg))./(1-rho+rho*exp(-0.5*A+B(neg)));
-   MEAN(pos)= rho./(rho+(1-rho)*exp(0.5*A-B(pos)));
-   VAR=mean2(MEAN.*(1-MEAN));
-   logZ=sum(log(1-rho+rho*exp(-0.5*A+B(neg))),1);   
-   logZ=logZ+sum(-0.5*A+B(pos)+log(rho+(1-rho)*exp(0.5*A-B(pos))),1);
-   MEAN,VAR,logZ;
+    Weight=-0.5*A[1]+B;
+    pos=find(Weight.>0);
+    neg=setdiff([1:size(B,1)],pos);
+    MEAN=zeros(size(B));
+    MEAN[neg]=rho*exp(-0.5*A[1]+B[neg])./(1-rho+rho*exp(-0.5*A[1]+B[neg]));
+    MEAN[pos]= rho./(rho+(1-rho)*exp(0.5*A[1]-B[pos]));
+    VAR=mean(MEAN.*(1-MEAN));
+    logZ=sum(log(1-rho+rho*exp(-0.5*A[1]+B[neg])));   
+    logZ=logZ+sum(-0.5*A[1]+B[pos]+log(rho+(1-rho)*exp(0.5*A[1]-B[pos])));
+    MEAN,VAR,logZ;
 end
 
 
