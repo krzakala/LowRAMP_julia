@@ -1,40 +1,193 @@
 #=
 Author: Florent Krzakala
 Date: 07-27-2015 -- 08-17-2015
-Where: Santa Fe Institute, Praha, Plzen
-Description: AMP for Low Rank Estimation LowRAMP for UV' decomposition
+Where: Santa Fe Institute (New Mexico USA), Plzen (Czech republic), A330 (AF Paris-Boston)
+Description: AMP for Low Rank Estimation LowRAMP for UV' and XX' decomposition
 =#
 
 module LowRAMP
 
-export LowRAMP_UV,LowRAMP_UV_new,demo_LowRAMP_UV
+export LowRAMP_UV,demo_LowRAMP_UV,LowRAMP_XX,demo_LowRAMP_XX
 
-function  demo_LowRAMP_UV(n,m,RANK,Delta)
-    @printf("Creating a problem of rank %d \n", RANK);
-    V = zeros(m,RANK);
-    for i=1:m
+
+function  demo_LowRAMP_XX(n=2500,RANK=3,p=0.5,Deltaeff=0.05)
+    @printf("Creating a problem of rank %d with a %dx%d matrix \n", RANK,n,n);
+
+    Delta=sqrt(p*(1-p)/Deltaeff);
+    pout = p - Delta/(RANK*sqrt(n));
+    pin = p + (1-1/RANK)*Delta/sqrt(n);
+
+    X = zeros(n,RANK);
+    for i=1:n
+        X[i,ceil(rand()*RANK)]=1;
+    end
+
+    #creating the adjacency matrix
+    random1=triu(int(rand(n,n).<pin),1);
+    random1=random1 +random1';
+    random2=triu(int(rand(n,n).<pout),1);
+    random2=random2 +random2';
+
+    #creating problem
+    A=X*X'.*random1+(1-X*X').*random2;
+    S=(Delta/pout)*A - (1-A)*Delta/(1-pout);
+    mu=(pin-pout)*sqrt(n);
+    Iinv=(mu*mu/(pout*(1-pout)))^-1;
+
+    #Calling the code
+    @printf("Running AMP \n");
+    damp=-0.5;    init_sol=1;
+    tic()  
+    x_ample = LowRAMP_XX(S,Iinv,RANK,f_clust,damp,1e-6,100,X,init_sol);
+    toc()
+    @printf("Done! The Squared Reconstruction error on the matrix reads %e \n",mean((x_ample*x_ample'-X*X').^2));
+end
+
+function  demo_LowRAMP_UV(m=250,n=1000,RANK=3,Delta=1e-2)
+    @printf("Creating a problem of rank %d with a %dx%d matrix \n", RANK,m,n);
+    V = zeros(n,RANK);
+    for i=1:n
         V[i,ceil(rand()*RANK)]=1;
     end
-    U = randn(n,RANK);
+    U = randn(m,RANK);
     
     #Adding noise!
-    Y=U*V'/sqrt(n)+sqrt(Delta)*randn(n,m);
+    Y=U*V'/sqrt(n)+sqrt(Delta)*randn(m,n);
     
     #Computing the score and the inverse Fischer information
     S=Y/Delta;Iinv=Delta;
     
     #Calling the code
     @printf("Running AMP \n");
-    damp=0.5;
-    init_sol=1;
+    damp=-1;    init_sol=1;
     tic()
-    u_ample,v_ample = LowRAMP_UV_new(S,Iinv,RANK,f_gauss,f_clust,damp,1e-6,100,U,V,init_sol);
+    u_ample,v_ample = LowRAMP_UV(S,Iinv,RANK,f_gauss,f_clust,damp,1e-6,100,U,V,init_sol);
     toc()
+    @printf("Done! The Squared Reconstruction error on the matrix reads %e \n",mean2((u_ample*v_ample'/sqrt(n)-Y).^2));
+
 end
 
-function LowRAMP_UV_new( S, Delta ,RANK, Fun_u=f_gauss,Fun_v=f_clust, damp=0.5,conv_criterion=1e-6,max_iter=100,u_truth=[],v_truth=[],init_sol=0)
+#= Core functions ********************************************************************************* =#
+
+function LowRAMP_XX( S, Delta ,RANK, Fun_a=f_clust, damping=0.5,conv_criterion=1e-6,max_iter=100,x_truth=[],init_sol=1)
+    # Usage AMP Lowrank Estimation for XX' decomposition
+    # LowRAMP_XX(S,Delta,RANK,prior for x [f_clust], damping[0.5],conv_criterion[1e-6],max_iter[1000],x_truth=[],init_sol=1)
+
+    n=size(S,1);
+
+    #Initialization
+    x=zeros(n,RANK);
+    if init_sol==0
+        @printf("Zeros initial conditions \n");
+    elseif init_sol==1 #Init in the solution
+        @printf("Random Gaussian initial conditions \n");
+        x=randn(n,RANK);
+    elseif init_sol==2
+        @printf("Use SVD as an initial condition \n");
+        V,D= eigs(S,RANK);
+        x=V[:,1:RANK];
+    elseif init_sol==3
+        @printf("Use solution as an initial condition \n");
+        x=x_truth+1e-4*randn(n,RANK);
+    elseif init_sol==4
+        @printf("Use prior as an initial condition \n");
+        x,x_var,log_u = Fun_a(eye(RANK,RANK),zeros(n,RANK));
+    elseif init_sol==5
+        @printf("Use ones as an initial condition \n");
+        x=ones(n,RANK)/n;    
+    end
+
+    x_old=zeros(n,RANK);
+    x_V=zeros(RANK,RANK);
+
+    diff=1;
+    t=0;
+
+    if (x_truth==[])
+        @printf("T  Delta diff Free_Entropy damp \n");
+    else
+        @printf("T  Delta diff Free_Entropy damp Error_x \n");
+    end
+    old_free_nrg=-realmax();delta_free_nrg=0;
+    free_nrg=0;
+    
+    B=zeros(n,RANK);
+    A=zeros(RANK,RANK);
+
+    while ((diff>conv_criterion)&&(t<max_iter))
+        #Keep old variable
+        A_old=A; 
+        B_old=B;
+        
+        #AMP Part
+        B_new=(S*x)/sqrt(n)-x_old*x_V/(Delta);
+        A_new=x'*x/(n*Delta);
+
+        #Keep old variables
+        x_old=x;
+
+        #Iteration with fixed damping or learner one
+        pass=0;
+        if (damping==-1)
+            damp=1;
+        else
+            damp=damping;
+        end
+        while (pass!=1) 
+            if (t>0)
+                A=(1-damp)*A_old+damp*A_new;
+                B=(1-damp)*B_old+damp*B_new;
+            else
+                A=A_new;
+                B=B_new;
+            end
+
+            x,x_V,logZ = Fun_a(A,B);
+
+            #Compute the Free Entropy
+            minusDKL=logZ+0.5*n*trace(A*x_V)+trace(0.5*A*x'*x)-trace(x'*B)   ;  
+            term_x=-trace((x'*x)*x_V)/(2*Delta);
+            term_xx=sum(x*x'.*S)/(2*sqrt(n))-trace((x'*x)*(x'*x))/(4*n*Delta);
+            free_nrg=(minusDKL+term_x+term_xx)/n;
+
+            #if t==0 accept
+            if (t==0)  delta_free_nrg=old_free_nrg-free_nrg;old_free_nrg=free_nrg; break; end
+            if (damping>=0)  delta_free_nrg=old_free_nrg-free_nrg;old_free_nrg=free_nrg; break;end
+            #Otherwise adapative damping
+            if (free_nrg>old_free_nrg)
+                delta_free_nrg=old_free_nrg-free_nrg;
+                old_free_nrg=free_nrg;
+                pass=1;
+            else
+                damp=damp/2;
+                if damp<1e-4;   delta_free_nrg=old_free_nrg-free_nrg;old_free_nrg=free_nrg;   break;end;
+            end                                 
+        end
+            
+        diff=mean(abs(x-x_old));
+        
+        if (x_truth==[])
+            @printf("%d %f %e %e %f\n",t,Delta,diff,free_nrg,damp);
+        else
+            @printf("%d %f %e %e %f %e \n",t,Delta,diff,free_nrg,damp,min(mean((x-x_truth).^2),mean((-x-x_truth).^2)));
+        end
+
+        if (abs(delta_free_nrg/free_nrg)<conv_criterion)        
+            break;
+        end
+        t=t+1;
+    end
+    
+    x    ;
+end
+
+
+
+
+function LowRAMP_UV( S, Delta ,RANK, Fun_u=f_gauss,Fun_v=f_clust, damping=0.5,conv_criterion=1e-6,max_iter=100,u_truth=[],v_truth=[],init_sol=1)
     # Usage AMP Lowrank Estimation for UV decomposition
-    # LowRAMP_UV( S , Delta, u_truth ,v_truth , RANK,damp,init_sol)    
+    # LowRAMP_UV(S,Delta,RANK,prior for u [f_gauss],prior for v [f_clust], damping[0.5],conv_criterion[1e-6],max_iter[1000],u_truth=[],v_truth=[],init_sol=1)
+
     m,n=size(S);
 
     #Initialization
@@ -70,12 +223,6 @@ function LowRAMP_UV_new( S, Delta ,RANK, Fun_u=f_gauss,Fun_v=f_clust, damp=0.5,c
     u_var=zeros(RANK,RANK);
     v_var=zeros(RANK,RANK);
 
-    u_new=zeros(m,RANK);   
-    v_new=zeros(n,RANK);
-    
-    u_V=ones(RANK,RANK);
-    v_V=ones(RANK,RANK);
-    
     diff=1;
     t=0;
 
@@ -92,43 +239,77 @@ function LowRAMP_UV_new( S, Delta ,RANK, Fun_u=f_gauss,Fun_v=f_clust, damp=0.5,c
     B_v=zeros(m,RANK);
     A_v=zeros(RANK,RANK);
 
-    while ((diff>conv_criterion)&&(t<max_iter))    
+    while ((diff>conv_criterion)&&(t<max_iter))
+        #Keep old variable
+        A_u_old=A_u;        A_v_old=A_v;
+        B_u_old=B_u;        B_v_old=B_v;
+        
         #AMP Part
-        B_u=(S*v)/sqrt(n)-u_old*v_V/(Delta);
-        A_u=v'*v/(n*Delta);
-        B_v=(S'*u)/sqrt(n)-v_old*u_V/(Delta);
-        A_v=u'*u/(n*Delta);
+        B_u_new=(S*v)/sqrt(n)-u_old*v_var/(Delta);
+        A_u_new=v'*v/(n*Delta);
+        B_v_new=(S'*u)/sqrt(n)-v_old*(m*u_var/n)/(Delta);
+        A_v_new=u'*u/(n*Delta);
+
         #Keep old variables
         u_old=u;
         v_old=v;
 
-        u_new,u_var,logu = Fun_u(A_u,B_u);#Gaussian Prior
-        v_new,v_var,logv = Fun_v(A_v,B_v);#Community prior
+        #Iteration with fixed damping or learner one
+        pass=0;
+        if (damping==-1)
+            damp=1;
+        else
+            damp=damping;
+        end
+        while (pass!=1) 
+            if (t>0)
+                A_u=(1-damp)*A_u_old+damp*A_u_new;
+                A_v=(1-damp)*A_v_old+damp*A_v_new;
+                B_u=(1-damp)*B_u_old+damp*B_u_new;
+                B_v=(1-damp)*B_v_old+damp*B_v_new;
+            else
+                A_u=A_u_new;                A_v=A_v_new;
+                B_u=B_u_new;                B_v=B_v_new;
+            end
 
-        #Compute the Free Entropy
-        minusDKL_u=logu+0.5*m*trace(A_u*u_var)+trace(0.5*A_u*u'*u)-trace(u'*B_u);   
-        minusDKL_v=logv+0.5*n*trace(A_v*v_var)+trace(0.5*A_v*v'*v)-trace(v'*B_v);   
-        term_u=-trace((u'*u)*v_var)/(2*Delta);
-        term_v=-(m/n)*trace((v'*v)*u_var)/(2*Delta);#this is such that A_u and B_u gets a factor m/n
-        term_uv=sum(u*v'.*S)/(sqrt(n))-trace((u'*u)*(v'*v))/(2*n*Delta); 
-        free_nrg=(minusDKL_u+minusDKL_v+term_u+term_v+term_uv)/n;
+            u,u_var,logu = Fun_u(A_u,B_u);
+            v,v_var,logv = Fun_v(A_v,B_v);
 
-        diff=mean(abs(v_new-v_old))+mean(abs(u_new-u_old));
-        u=(1-damp)*u_new+damp*u_old;#damping
-        v=(1-damp)*v_new+damp*v_old;#damping
-          
-        u_V=m*u_var/n;
-        v_V=v_var;
+            #Compute the Free Entropy
+            minusDKL_u=logu+0.5*m*trace(A_u*u_var)+trace(0.5*A_u*u'*u)-trace(u'*B_u);   
+            minusDKL_v=logv+0.5*n*trace(A_v*v_var)+trace(0.5*A_v*v'*v)-trace(v'*B_v);   
+            term_u=-trace((u'*u)*v_var)/(2*Delta);
+            term_v=-(m/n)*trace((v'*v)*u_var)/(2*Delta);#this is such that A_u and B_u gets a factor m/n
+            term_uv=sum(u*v'.*S)/(sqrt(n))-trace((u'*u)*(v'*v))/(2*n*Delta); 
+            free_nrg=(minusDKL_u+minusDKL_v+term_u+term_v+term_uv)/n;
 
+            #if t==0 accept
+            if (t==0)  delta_free_nrg=old_free_nrg-free_nrg;old_free_nrg=free_nrg; break; end
+            if (damping>=0)  delta_free_nrg=old_free_nrg-free_nrg;old_free_nrg=free_nrg; break;end
+            #Otherwise adapative damping
+            if (free_nrg>old_free_nrg)
+                delta_free_nrg=old_free_nrg-free_nrg;
+                old_free_nrg=free_nrg;
+                pass=1;
+            else
+                damp=damp/2;
+                if damp<1e-4;   delta_free_nrg=old_free_nrg-free_nrg;old_free_nrg=free_nrg;   break;end;
+            end                                 
+        end
+            
+        diff=mean(abs(v-v_old))+mean(abs(u-u_old));
+        
         if ((u_truth==[])&&(v_truth==[]))
             @printf("%d %f %e %e %f\n",t,Delta,diff,free_nrg,damp);
         else
             @printf("%d %f %e %e %f %e %e \n",t,Delta,diff,free_nrg,damp,min(mean((u-u_truth).^2),mean((-u-u_truth).^2)),min(mean((v-v_truth).^2),mean((-v-v_truth).^2)));
         end
 
+        if (abs(delta_free_nrg/free_nrg)<conv_criterion)        
+            break;
+        end
         t=t+1;
     end
-
     
     u,v    ;
 end
