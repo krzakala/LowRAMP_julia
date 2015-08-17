@@ -3,6 +3,7 @@ Author: Florent Krzakala
 Date: 07-27-2015 -- 08-17-2015
 Where: Santa Fe Institute (New Mexico USA), Plzen (Czech republic), A330 (AF Paris-Boston)
 Description: AMP for Low Rank Estimation LowRAMP for UV' and XX' decomposition
+This is a very preliminary module, next iteration should be more stable
 =#
 
 module LowRAMP
