@@ -1,7 +1,7 @@
 #=
 Author: Florent Krzakala
 Date: 07-27-2015 -- 08-17-2015
-Where: Santa Fe Institute (New Mexico USA), Plzen (Czech republic), A330 (AF Paris-Boston)
+Where: Santa Fe Institute (New Mexico USA), Plzen (Czech republic), A330 (AF Paris-Boston) and Harvard for the 0.4 version
 Description: AMP for Low Rank Estimation LowRAMP for UV' and XX' decomposition
 This is a very preliminary module, next iteration should be more stable
 =#
@@ -29,7 +29,7 @@ function  demo_completion(m=5000,n=5000,RANK=3,Delta=1e-4)
 
     @printf("Let us now hide 90 percent of all entries \n");
     fraction=0.1;
-    Support=int(rand(size(Y)).<fraction);
+    Support=round(Int,(rand(size(Y)).<fraction));
     
     #Calling the code
     @printf("Running AMP \n");
@@ -75,13 +75,13 @@ function  demo_LowRAMP_XX(n=2500,RANK=3,p=0.5,Deltaeff=0.05)
 
     X = zeros(n,RANK);
     for i=1:n
-        X[i,ceil(rand()*RANK)]=1;
+        X[i,round(Int,ceil(rand()*RANK))]=1;
     end
 
     #creating the adjacency matrix
-    random1=triu(int(rand(n,n).<pin),1);
+    random1=triu(round(Int,(rand(n,n).<pin)),1);
     random1=random1 +random1';
-    random2=triu(int(rand(n,n).<pout),1);
+    random2=triu(round(Int,(rand(n,n).<pout)),1);
     random2=random2 +random2';
 
     #creating problem
@@ -103,7 +103,7 @@ function  demo_LowRAMP_UV(m=250,n=1000,RANK=3,Delta=1e-2)
     @printf("Creating a problem of rank %d with a %dx%d matrix \n", RANK,m,n);
     V = zeros(n,RANK);
     for i=1:n
-        V[i,ceil(rand()*RANK)]=1;
+        V[i,round(Int,ceil(rand()*RANK))]=1;
     end
     U = randn(m,RANK);
     
@@ -401,7 +401,7 @@ end
 function f_Rank1Binary(A,B,rho=0.5)
     Weight=-0.5*A[1]+B;
     pos=find(Weight.>0);
-    neg=setdiff([1:size(B,1)],pos);
+    neg=setdiff([1:size(B,1);],pos);
     MEAN=zeros(size(B));
     MEAN[neg]=rho*exp(-0.5*A[1]+B[neg])./(1-rho+rho*exp(-0.5*A[1]+B[neg]));
     MEAN[pos]= rho./(rho+(1-rho)*exp(0.5*A[1]-B[pos]));
