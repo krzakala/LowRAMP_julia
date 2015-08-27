@@ -1,4 +1,5 @@
 LowRAMP: Low rank Approximate Message Passing, a JULIA software for low rank matrix factorization based on belief propagation.
+version: This requires Julia 0.4
 COPYRIGHT (C) 2015 Thibault Lesieur, Florent Krzakala and Lenka Zdeborova
 Contact : florent.krzakala@ens.fr
 
@@ -9,6 +10,8 @@ This program is distributed in the hope that it will be useful, but WITHOUT ANY 
 You should have received a copy of the GNU General Public License along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+
+This code requites Julia 0.4
 
 Files included in this package : LowRamp.jl
    

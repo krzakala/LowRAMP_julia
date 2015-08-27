@@ -1,5 +1,5 @@
 LowRAMP: Low rank Approximate Message Passing, a JULIA software for low rank matrix factorization based on belief propagation.
-version: This requires Julia 0.4
+Version: This requires Julia 0.4
 COPYRIGHT (C) 2015 Thibault Lesieur, Florent Krzakala and Lenka Zdeborova
 Contact : florent.krzakala@ens.fr
 
@@ -15,13 +15,9 @@ This code requites Julia 0.4
 
 Files included in this package : LowRamp.jl
    
-USAGE : from julia:
- workspace();include("LowRAMP.jl");using LowRAMP
-Then run 
-* demo_LowRAMP_UV() for a UV factorization of a clustering  problem
-* demo_completion() for a completion problem
-* demo_LowRAMP_XX() for a community detection problem
-* demo_Submatrix() for a submatrix localization problem
+USAGE : from julia  workspace();include("LowRAMP.jl");using LowRAMP
+
+A set of demo is also provided, just try include("test.jl")
 
 These equations are based on http://arxiv.org/abs/1503.00338 (ISIT 2015) and http://arxiv.org/abs/1507.03857
 They follow from earlier works: 
