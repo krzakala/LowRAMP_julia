@@ -15,7 +15,7 @@ This code requites Julia 0.4
 
 Files included in this package : LowRamp.jl
    
-USAGE : from julia  workspace();include("LowRAMP.jl");using LowRAMP
+USAGE : from julia   push!(LOAD_PATH, ".");using LowRAMP
 
 A set of demo is also provided, just try include("test.jl")
 
